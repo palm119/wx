@@ -1,0 +1,15 @@
+{
+    "name": "xESP12F",
+    "version": "0.0.1",
+    "description": "Extension for ESP8266-12F Wifi module, code by laoxu, xurunhua@139.com.",
+    "license": "MIT",
+    "dependencies": {
+        "core": "*"
+    },
+    "files": [
+        "README.md",
+        "main.ts"
+    ],
+    "public": true,
+    "preferredEditor": "tsprj"
+}
