@@ -12,15 +12,15 @@ namespace xESP12F {
     let data: string;                       //收到的数据包
     let tmWifiDis: number;                  //收到wifi端口的时间
 
-    let wifiConnSucess: EvtAct = null;      //Wifi连接成功
     let wifiConnError: EvtAct = null;       //Wifi连接失败
-    let wifiDisConn: EvtAct = null;         //Wifi连接断开
+    let wifiConnDis: EvtAct = null;         //Wifi连接断开
+    let wifiConn: EvtAct = null;            //Wifi连接
     let mqttConn: EvtAct = null;            //MQTT连接
     let mqttTopicData: EvtDict = null;      //收到MQTT话题数据
 
     //发送AT指令
-    function sendAT(command: string, waitTime: number = 200) {
-        // OD01.printString("s:"+command)
+    function sendAT(command: string, waitTime: number = 100) {
+        // OD01.printString("Send:"+command.substr(0, 15))
         serial.writeString(command + "\u000D\u000A")
         basic.pause(waitTime)
     }
@@ -39,12 +39,11 @@ namespace xESP12F {
 
     //收到数据，处理数据回调函数
     //包括：网络连接/断开、MQTT服务器连接成功、收到MQTT话题数据
-    serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+    serial.onDataReceived('\n', function () {
         data = serial.readString()
         if (data.length<=0) {
             return;
         }
-        // OD01.printString('r:'+data, true)
 
         //Wifi状态
         if (data.length>=6 && data.substr(0, 6)=='+CWJAP' && wifiConnError) { //连接错误的返回
@@ -71,20 +70,22 @@ namespace xESP12F {
         //MQTT服务器连接
         //+MQTTCONNECTED:0,1,"iot.kittenbot.cn","1883","",1
         if (data.indexOf("+MQTTCONNECTED")>=0 && mqttConn) {
-            mqttConn(); //回调到前台
+            mqttConn();
         }
 
         //MQTT话题收据收到
         //+MQTTSUBRECV:<LinkID>,<"topic">,<data_length>,data
         let idx = data.indexOf("+MQTTSUBRECV");
-        if (idx>=0 && mqttTopicData) { 
-            data = data.substr(idx+13, data.length-idx-13)+',';
+        if (idx>=0) { 
+            data = data.substr(idx+13, data.length-idx-13);
             let linkid: string = seekNext();
             let topic: string = seekNext();
             topic = topic.substr(1, topic.length-2);
             let len = parseInt(seekNext());
-            let strData = seekNext().substr(0,len);
-            mqttTopicData(topic, strData);  //回调到前台
+            let strData = data.substr(0,len);
+            if (mqttTopicData) {
+                mqttTopicData(topic, strData);
+            }
         }
     })
 
@@ -104,6 +105,7 @@ namespace xESP12F {
         basic.pause(500);
         serial.setRxBufferSize(194);
         serial.setTxBufferSize(64);
+        sendAT("AT+CWMODE=3");
     }
 
     /**
@@ -115,7 +117,6 @@ namespace xESP12F {
     //% weight=98
     export function wifi_join(ap: string, pass: string): void {
         tmWifiDis = 0;
-        sendAT("AT+CWMODE=3");
         sendAT('AT+CWJAP=\"'+ap+'\",\"'+pass+'\"', 500)
     }
 
@@ -126,7 +127,7 @@ namespace xESP12F {
     //% blockId=on_wifi_connected block="Wifi 连接成功"
     //% weight=96
     export function on_wifi_connected(handler: () => void): void {
-        wifiConnSucess = handler;
+        wifiConn = handler;
     }
 
     /**
@@ -148,7 +149,7 @@ namespace xESP12F {
     //% blockId=on_wifi_disconnect block="Wifi 连接断开"
     //% weight=94
     export function on_wifi_disconnect(handler: () => void): void {
-        wifiDisConn = handler;
+        wifiConnDis = handler;
     }
 
     /**
