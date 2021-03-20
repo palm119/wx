@@ -2,11 +2,11 @@
 
 Extension for ESP8266-12F Wifi module.
 
-Update:
-0.0.1：
-初始化版本.
-0.0.2:
-增加Wifi连接错误和断开积木。
+## Update:
+- 0.0.1：
+    - 初始化版本.
+- 0.0.2:
+    - 增加Wifi连接错误和断开积木。
 
 ## Feature
 
