@@ -10,8 +10,11 @@ namespace xESP12F {
     type EvtDict = (topic: string, data: string) => void;
 
     let data: string;                       //收到的数据包
+    let tmWifiDis: number;
 
-    let wifiConn: EvtAct = null;            //Wifi连接
+    let wifiConnSucess: EvtAct = null;      //Wifi连接成功
+    let wifiConnError: EvtAct = null;       //Wifi连接失败
+    let wifiDisConn: EvtAct = null;         //Wifi连接断开
     let mqttConn: EvtAct = null;            //MQTT连接
     let mqttTopicData: EvtDict = null;      //收到MQTT话题数据
 
@@ -23,9 +26,9 @@ namespace xESP12F {
     }
 
     //检索字符串后一段数据（空格或者回车换行分割）
-    function seekNext(comma: boolean = true): string {
+    function seekNext(): string {
         for (let i = 0; i < data.length; i++) {
-            if ((comma && data.charAt(i) == ',') || data.charAt(i) == '\r' || data.charAt(i) == '\n') {
+            if (data.charAt(i) == ',') {
                 let ret = data.substr(0, i);
                 data = data.substr(i + 1, data.length - i);
                 return ret;
@@ -36,45 +39,53 @@ namespace xESP12F {
 
     //收到数据，处理数据回调函数
     //包括：网络连接/断开、MQTT服务器连接成功、收到MQTT话题数据
-    serial.onDataReceived('\n', function () {
+    serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
         data = serial.readString()
         if (data.length<=0) {
             return;
         }
+        // OD01.printString(data, true)
 
         //Wifi状态
-        if (data.length>=14 && data.substr(0, 4)=='WIFI') { 
-            let str = seekNext();
-            while (str.length>0) {
-                if (str.length>=11 && str.substr(0, 11)=='WIFI GOT IP') {
-                    if (wifiConn) {
-                        wifiConn();
-                    }
-                    break;
-                }
-                str = seekNext();
-            }
+        if (data.length>=6 && data.substr(0, 6)=='+CWJAP' && wifiConnError) { //连接错误的返回
+            tmWifiDis = 0;
+            // OD01.printString(data, true)
+            wifiConnError();    //回调到前台
+        }
+        //Wifi断开
+        if (data.length>=15 && data.substr(0, 15)=='WIFI DISCONNECT') {   
+            tmWifiDis = input.runningTime();
+            // OD01.printString(tmWifiDis+":"+data, true)
+        }    
+        //OD01.printString(input.runningTime()+":"+data, true)
+        if (tmWifiDis>0 && (input.runningTime()-tmWifiDis)>2000 && wifiDisConn) {
+            tmWifiDis = 0;
+            wifiDisConn();  //回调到前台
+        }
+        //Wifi连接成功
+        if (data.length>=11 && data.substr(0, 11)=='WIFI GOT IP' && wifiConnSucess) {   //成功
+            tmWifiDis = 0;
+            // OD01.printString(input.runningTime()+":"+data, true)
+            wifiConnSucess();   //回调到前台
         }
 
         //MQTT服务器连接
         //+MQTTCONNECTED:0,1,"iot.kittenbot.cn","1883","",1
         if (data.indexOf("+MQTTCONNECTED")>=0 && mqttConn) {
-            mqttConn();
+            mqttConn(); //回调到前台
         }
 
         //MQTT话题收据收到
         //+MQTTSUBRECV:<LinkID>,<"topic">,<data_length>,data
         let idx = data.indexOf("+MQTTSUBRECV");
-        if (idx>=0) { 
-            data = data.substr(idx+13, data.length-idx-13);
+        if (idx>=0 && mqttTopicData) { 
+            data = data.substr(idx+13, data.length-idx-13)+',';
             let linkid: string = seekNext();
             let topic: string = seekNext();
             topic = topic.substr(1, topic.length-2);
             let len = parseInt(seekNext());
-            let strData = data.substr(0, len);
-            if (mqttTopicData) {
-                mqttTopicData(topic, strData);
-            }
+            let strData = seekNext();
+            mqttTopicData(topic, strData);  //回调到前台
         }
     })
 
@@ -94,7 +105,6 @@ namespace xESP12F {
         basic.pause(500);
         serial.setRxBufferSize(194);
         serial.setTxBufferSize(64);
-        sendAT("AT+CWMODE=3");
     }
 
     /**
@@ -105,6 +115,8 @@ namespace xESP12F {
     //% blockId=wifi_join block="Wifi 连接路由器%ap 密码%pass"
     //% weight=98
     export function wifi_join(ap: string, pass: string): void {
+        tmWifiDis = 0;
+        sendAT("AT+CWMODE=3");
         sendAT('AT+CWJAP=\"'+ap+'\",\"'+pass+'\"', 500)
     }
 
@@ -115,7 +127,29 @@ namespace xESP12F {
     //% blockId=on_wifi_connected block="Wifi 连接成功"
     //% weight=96
     export function on_wifi_connected(handler: () => void): void {
-        wifiConn = handler;
+        wifiConnSucess = handler;
+    }
+
+    /**
+     * 当 Wifi 连接失败时
+     * @param handler Wifi connect error callback
+    */
+    //% advanced=true
+    //% blockId=on_wifi_connect_err block="Wifi 连接失败"
+    //% weight=95
+    export function on_wifi_connect_error(handler: () => void): void {
+        wifiConnError = handler;
+    }
+    
+    /**
+     * 当 Wifi 连接断开时
+     * @param handler Wifi connected callback
+    */
+    //% advanced=true
+    //% blockId=on_wifi_disconnect block="Wifi 连接断开"
+    //% weight=94
+    export function on_wifi_disconnect(handler: () => void): void {
+        wifiDisConn = handler;
     }
 
     /**
@@ -124,7 +158,7 @@ namespace xESP12F {
      * @param clientid Mqtt client id; eg: microbit
     */
     //% blockId=mqtt_connect block="连接 MQTT 服务器%host 客户端ID%clientid"
-    //% weight=94
+    //% weight=93
     export function mqtt_connect(host: string, clientid: string): void {
         mqtt_connect_auth_port(host, 1883, clientid, '', '');
     }

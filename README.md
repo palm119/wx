@@ -5,6 +5,8 @@ Extension for ESP8266-12F Wifi module.
 Update:
 0.0.1：
 初始化版本.
+0.0.2:
+增加Wifi连接错误和断开积木。
 
 ## Feature
 
@@ -18,10 +20,13 @@ xESP12F.on_wifi_connected(function () {
     xESP12F.mqtt_connect("iot.kittenbot.cn", "microbit")
 })
 xESP12F.on_mqtt_connected(function () {
-    xESP12F.mqtt_subscribe("/test/hello")
+    xESP12F.mqtt_subscribe("/hello")
+})
+input.onButtonPressed(Button.A, function () {
+    xESP12F.mqtt_publish("/upload", "123")
 })
 xESP12F.on_mqtt_topic_data(function (topic, data) {
-    if (topic == "/test/hello") {
+    if (topic == "/hello") {
         if (data == "1") {
             basic.showIcon(IconNames.Heart)
         } else {
@@ -29,11 +34,8 @@ xESP12F.on_mqtt_topic_data(function (topic, data) {
         }
     }
 })
-input.onButtonPressed(Button.A, function () {
-    xESP12F.mqtt_publish("/test/wendu", "22")
-})
 xESP12F.wifi_init(SerialPin.P1, SerialPin.P2)
-xESP12F.wifi_join("tets", "123456")
+xESP12F.wifi_join("ap", "123456")
 ```
 
 ----------
