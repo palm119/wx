@@ -10,7 +10,7 @@ namespace xESP12F {
     type EvtDict = (topic: string, data: string) => void;
 
     let data: string;                       //收到的数据包
-    let tmWifiDis: number;
+    let tmWifiDis: number;                  //收到wifi端口的时间
 
     let wifiConnSucess: EvtAct = null;      //Wifi连接成功
     let wifiConnError: EvtAct = null;       //Wifi连接失败
@@ -19,8 +19,8 @@ namespace xESP12F {
     let mqttTopicData: EvtDict = null;      //收到MQTT话题数据
 
     //发送AT指令
-    function sendAT(command: string, waitTime: number = 100) {
-        // OD01.printString("Send:"+command.substr(0, 15))
+    function sendAT(command: string, waitTime: number = 200) {
+        // OD01.printString("s:"+command)
         serial.writeString(command + "\u000D\u000A")
         basic.pause(waitTime)
     }
@@ -44,7 +44,7 @@ namespace xESP12F {
         if (data.length<=0) {
             return;
         }
-        // OD01.printString(data, true)
+        // OD01.printString('r:'+data, true)
 
         //Wifi状态
         if (data.length>=6 && data.substr(0, 6)=='+CWJAP' && wifiConnError) { //连接错误的返回
@@ -53,19 +53,18 @@ namespace xESP12F {
             wifiConnError();    //回调到前台
         }
         //Wifi断开
-        if (data.length>=15 && data.substr(0, 15)=='WIFI DISCONNECT') {   
-            tmWifiDis = input.runningTime();
+        if (data.indexOf("WIFI DISCONNECT")>=0) {   
             // OD01.printString(tmWifiDis+":"+data, true)
+            tmWifiDis = input.runningTime();
         }    
-        //OD01.printString(input.runningTime()+":"+data, true)
-        if (tmWifiDis>0 && (input.runningTime()-tmWifiDis)>2000 && wifiDisConn) {
+        if (tmWifiDis>0 && (input.runningTime()-tmWifiDis)>2500 && wifiDisConn) {
             tmWifiDis = 0;
             wifiDisConn();  //回调到前台
         }
         //Wifi连接成功
-        if (data.length>=11 && data.substr(0, 11)=='WIFI GOT IP' && wifiConnSucess) {   //成功
-            tmWifiDis = 0;
+        if (data.indexOf("WIFI CONNECTED")>=0 && wifiConnSucess) {   //成功
             // OD01.printString(input.runningTime()+":"+data, true)
+            tmWifiDis = 0;
             wifiConnSucess();   //回调到前台
         }
 
@@ -84,7 +83,7 @@ namespace xESP12F {
             let topic: string = seekNext();
             topic = topic.substr(1, topic.length-2);
             let len = parseInt(seekNext());
-            let strData = seekNext();
+            let strData = seekNext().substr(0,len);
             mqttTopicData(topic, strData);  //回调到前台
         }
     })
