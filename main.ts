@@ -56,15 +56,15 @@ namespace xESP12F {
             // OD01.printString(tmWifiDis+":"+data, true)
             tmWifiDis = input.runningTime();
         }    
-        if (tmWifiDis>0 && (input.runningTime()-tmWifiDis)>2500 && wifiDisConn) {
+        if (tmWifiDis>0 && (input.runningTime()-tmWifiDis)>2500 && wifiConnDis) {
             tmWifiDis = 0;
-            wifiDisConn();  //回调到前台
+            wifiConnDis();  //回调到前台
         }
         //Wifi连接成功
-        if (data.indexOf("WIFI CONNECTED")>=0 && wifiConnSucess) {   //成功
+        if (data.indexOf("WIFI CONNECTED")>=0 && wifiConn) {   //成功
             // OD01.printString(input.runningTime()+":"+data, true)
             tmWifiDis = 0;
-            wifiConnSucess();   //回调到前台
+            wifiConn();   //回调到前台
         }
 
         //MQTT服务器连接
