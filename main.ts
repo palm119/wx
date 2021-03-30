@@ -10,7 +10,12 @@ namespace xESP12F {
     type EvtDict = (topic: string, data: string) => void;
 
     let data: string;                       //收到的数据包
+    let mqttHost: string;                   //MQTT服务器地址
+    let mqttPort = 1833;                    //MQTT服务器端口
     let tmWifiDis: number;                  //收到wifi端口的时间
+
+    let bWifiConnected: boolean;            //是否连接了wifi
+    let bSendMqttCfg: boolean;              //是否发送了mqtt配置信息
 
     let wifiConnError: EvtAct = null;       //Wifi连接失败
     let wifiConnDis: EvtAct = null;         //Wifi连接断开
@@ -20,15 +25,16 @@ namespace xESP12F {
 
     //发送AT指令
     function sendAT(command: string, waitTime: number = 100) {
-        // OD01.printString("Send:"+command.substr(0, 15))
+        // OD01.printString("Send:"+command); 
+        // basic.pause(3000);
         serial.writeString(command + "\u000D\u000A")
         basic.pause(waitTime)
     }
 
     //检索字符串后一段数据（空格或者回车换行分割）
-    function seekNext(): string {
+    function seekNext(comma: boolean = true): string {
         for (let i = 0; i < data.length; i++) {
-            if (data.charAt(i) == ',') {
+            if ((comma && data.charAt(i) == ',') || data.charAt(i) == '\r' || data.charAt(i) == '\n') {
                 let ret = data.substr(0, i);
                 data = data.substr(i + 1, data.length - i);
                 return ret;
@@ -40,20 +46,33 @@ namespace xESP12F {
     //收到数据，处理数据回调函数
     //包括：网络连接/断开、MQTT服务器连接成功、收到MQTT话题数据
     serial.onDataReceived('\n', function () {
-        data = serial.readString()
-        if (data.length<=0) {
-            return;
+        data = serial.readLine()
+        // OD01.printString("Rev:"+data)
+        // basic.pause(3000);
+
+        //连接成功
+        if (data.includes("OK")) {
+            //Wifi状态
+            if (bWifiConnected && wifiConn) { 
+                bWifiConnected = false;
+                wifiConn();
+            }
+
+            //发送mqtt配置完后的OK
+             if (bSendMqttCfg) {    
+                bSendMqttCfg = false;
+                sendAT('AT+MQTTCONN=0,\"'+mqttHost+'\",'+mqttPort+',1');    //连接MQTT服务器
+             }
+
         }
 
         //Wifi状态
-        if (data.length>=6 && data.substr(0, 6)=='+CWJAP' && wifiConnError) { //连接错误的返回
+        if (data.indexOf("+CWJAP")==0 && wifiConnError) { //连接错误的返回
             tmWifiDis = 0;
-            // OD01.printString(data, true)
             wifiConnError();    //回调到前台
         }
         //Wifi断开
-        if (data.indexOf("WIFI DISCONNECT")>=0) {   
-            // OD01.printString(tmWifiDis+":"+data, true)
+        if (data.indexOf("WIFI DISCONNECT")==0) {   
             tmWifiDis = input.runningTime();
         }    
         if (tmWifiDis>0 && (input.runningTime()-tmWifiDis)>2500 && wifiConnDis) {
@@ -61,10 +80,9 @@ namespace xESP12F {
             wifiConnDis();  //回调到前台
         }
         //Wifi连接成功
-        if (data.indexOf("WIFI CONNECTED")>=0 && wifiConn) {   //成功
-            // OD01.printString(input.runningTime()+":"+data, true)
+        if (data.indexOf("WIFI GOT IP")>=0 && wifiConn) { 
             tmWifiDis = 0;
-            wifiConn();   //回调到前台
+            bWifiConnected = true;
         }
 
         //MQTT服务器连接
@@ -79,12 +97,12 @@ namespace xESP12F {
         if (idx>=0) { 
             data = data.substr(idx+13, data.length-idx-13);
             let linkid: string = seekNext();
-            let topic: string = seekNext();
-            topic = topic.substr(1, topic.length-2);
+            let topic1: string = seekNext();
+            topic1 = topic1.substr(1, topic1.length-2);
             let len = parseInt(seekNext());
-            let strData = data.substr(0,len);
+            let strData = data.substr(0, len);
             if (mqttTopicData) {
-                mqttTopicData(topic, strData);
+                mqttTopicData(topic1, strData);
             }
         }
     })
@@ -116,8 +134,7 @@ namespace xESP12F {
     //% blockId=wifi_join block="Wifi 连接路由器%ap 密码%pass"
     //% weight=98
     export function wifi_join(ap: string, pass: string): void {
-        tmWifiDis = 0;
-        sendAT('AT+CWJAP=\"'+ap+'\",\"'+pass+'\"', 500)
+        sendAT('AT+CWJAP=\"'+ap+'\",\"'+pass+'\"')
     }
 
     /**
@@ -131,34 +148,12 @@ namespace xESP12F {
     }
 
     /**
-     * 当 Wifi 连接失败时
-     * @param handler Wifi connect error callback
-    */
-    //% advanced=true
-    //% blockId=on_wifi_connect_err block="Wifi 连接失败"
-    //% weight=95
-    export function on_wifi_connect_error(handler: () => void): void {
-        wifiConnError = handler;
-    }
-    
-    /**
-     * 当 Wifi 连接断开时
-     * @param handler Wifi connected callback
-    */
-    //% advanced=true
-    //% blockId=on_wifi_disconnect block="Wifi 连接断开"
-    //% weight=94
-    export function on_wifi_disconnect(handler: () => void): void {
-        wifiConnDis = handler;
-    }
-
-    /**
      * 设置MQTT服务器地址和客户端ID并连接
      * @param host Mqtt server ip or address; eg: iot.kittenbot.cn
      * @param clientid Mqtt client id; eg: microbit
     */
     //% blockId=mqtt_connect block="连接 MQTT 服务器%host 客户端ID%clientid"
-    //% weight=93
+    //% weight=94
     export function mqtt_connect(host: string, clientid: string): void {
         mqtt_connect_auth_port(host, 1883, clientid, '', '');
     }
@@ -204,6 +199,28 @@ namespace xESP12F {
     }
 
     /**
+     * 当 Wifi 连接失败时
+     * @param handler Wifi connect error callback
+    */
+    //% advanced=true
+    //% blockId=on_wifi_connect_err block="Wifi 连接失败"
+    //% weight=85
+    export function on_wifi_connect_error(handler: () => void): void {
+        wifiConnError = handler;
+    }
+    
+    /**
+     * 当 Wifi 连接断开时
+     * @param handler Wifi connected callback
+    */
+    //% advanced=true
+    //% blockId=on_wifi_disconnect block="Wifi 连接断开"
+    //% weight=84
+    export function on_wifi_disconnect(handler: () => void): void {
+        wifiConnDis = handler;
+    }
+
+    /**
      * 设置 MQTT 服务器地址端口和认证信息
      * @param host Mqtt server ip or address; eg: iot.kittenbot.cn
      * @param clientid Mqtt client id; eg: microbit
@@ -211,10 +228,12 @@ namespace xESP12F {
     */
     //% advanced=true
     //% blockId=mqtt_connect_auth_port block="连接 MQTT 服务器 %host|端口 %port|客户端ID %clientid|用户名 %username|密码 %pass"
-    //% weight=84
+    //% weight=83
     export function mqtt_connect_auth_port(host: string, port: number, clientid: string, username: string, pass: string): void {
+        mqttHost = host;
+        mqttPort = port;
         sendAT('AT+MQTTUSERCFG=0,1,\"'+clientid+'\",\"'+username+'\",\"'+pass+'\",0,0,\"\"');
-        sendAT('AT+MQTTCONN=0,\"'+host+'\",'+port+',1');
+        bSendMqttCfg = true;
     }
 
 }
